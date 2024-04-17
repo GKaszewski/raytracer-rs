@@ -1,5 +1,5 @@
 use clap::Parser;
-use gltf::{buffer::Data, mesh::Primitive, Gltf};
+use gltf::{buffer::Data, mesh::Primitive};
 use std::sync::Arc;
 
 use image::RgbImage;
@@ -50,6 +50,14 @@ fn linear_to_gamma(value: f32) -> f32 {
     } else {
         0.0
     }
+}
+
+fn random_color() -> Vector3<f32> {
+    Vector3::new(
+        rand::random::<f32>(),
+        rand::random::<f32>(),
+        rand::random::<f32>(),
+    )
 }
 
 fn near_zero(vec: Vector3<f32>) -> bool {
@@ -592,7 +600,7 @@ fn process_primitive(primitive: Primitive, buffers: &[Data]) -> Option<Mesh> {
     let positions = reader
         .read_positions()?
         .map(Vector3::from)
-        .map(|pos| Vector3::new(pos[0] * 400.0, pos[1] * 400.0, pos[2] * 400.0))
+        .map(|pos| Vector3::new(pos[0], pos[1], pos[2]))
         .collect::<Vec<_>>();
 
     println!("Positions: {:?}", positions);
@@ -602,7 +610,7 @@ fn process_primitive(primitive: Primitive, buffers: &[Data]) -> Option<Mesh> {
         .map(|indices| indices.into_u32().collect::<Vec<_>>())?;
 
     let material = Arc::new(MaterialMetal {
-        albedo: Vector3::new(1.0, 1.0, 0.0),
+        albedo: random_color(),
         fuzz: 0.4,
     });
 
@@ -622,14 +630,81 @@ struct Args {
     max_depth: u32,
 }
 
+fn monkey_scene() -> HitableList {
+    let monkey_mesh = load_gltf_mesh("monke.glb");
+    let ground_material = Arc::new(MaterialLambertian {
+        albedo: Vector3::new(1.0, 0.5, 0.5),
+    });
+
+    let mut world = HitableList::new();
+
+    world.add(Box::new(Sphere {
+        center: Vector3::new(0.0, -105.0, 0.0),
+        radius: 100.0,
+        material: ground_material.clone(),
+    }));
+    for mesh in monkey_mesh {
+        println!("Adding mesh");
+        world.add(Box::new(mesh));
+    }
+
+    world
+}
+
+fn balls_scene() -> HitableList {
+    let ground_material = Arc::new(MaterialLambertian {
+        albedo: Vector3::new(1.0, 0.5, 0.5),
+    });
+    let center_material = Arc::new(MaterialLambertian {
+        albedo: Vector3::new(0.1, 0.2, 0.5),
+    });
+    let left_material = Arc::new(MaterialDielectric {
+        refraction_index: 1.5,
+    });
+    let right_material = Arc::new(MaterialMetal {
+        albedo: Vector3::new(0.8, 0.6, 0.2),
+        fuzz: 1.0,
+    });
+    let bubble_material = Arc::new(MaterialDielectric {
+        refraction_index: 1.0 / 1.5,
+    });
+
+    let mut world = HitableList::new();
+    world.add(Box::new(Sphere {
+        center: Vector3::new(0.0, -100.5, -1.0),
+        radius: 100.0,
+        material: ground_material.clone(),
+    }));
+    world.add(Box::new(Sphere {
+        center: Vector3::new(0.0, 0.0, -1.0),
+        radius: 0.5,
+        material: center_material.clone(),
+    }));
+    world.add(Box::new(Sphere {
+        center: Vector3::new(-1.0, 0.0, -1.0),
+        radius: 0.5,
+        material: left_material.clone(),
+    }));
+    world.add(Box::new(Sphere {
+        center: Vector3::new(-1.0, 0.0, -1.0),
+        radius: -0.45,
+        material: right_material.clone(),
+    }));
+    world.add(Box::new(Sphere {
+        center: Vector3::new(1.0, 0.0, -1.0),
+        radius: 0.5,
+        material: bubble_material.clone(),
+    }));
+
+    world
+}
+
 fn main() {
     let args = Args::parse();
     let width = args.width;
     let vfov = args.vfov;
     let samples = args.samples;
     let max_depth = args.max_depth;
-
-    let monkey_mesh = load_gltf_mesh("Fortress.glb");
 
     let mut cam = Camera {
         aspect_ratio: 16.0 / 9.0,
@@ -650,35 +725,7 @@ fn main() {
     cam.intitialize();
 
     let mut img = RgbImage::new(cam.image_width, cam.image_height);
-
-    let ground_material = Arc::new(MaterialLambertian {
-        albedo: Vector3::new(1.0, 0.5, 0.5),
-    });
-    let center_material = Arc::new(MaterialLambertian {
-        albedo: Vector3::new(0.1, 0.2, 0.5),
-    });
-    let left_material = Arc::new(MaterialDielectric {
-        refraction_index: 1.5,
-    });
-    let right_material = Arc::new(MaterialMetal {
-        albedo: Vector3::new(0.8, 0.6, 0.2),
-        fuzz: 1.0,
-    });
-    let bubble_material = Arc::new(MaterialDielectric {
-        refraction_index: 1.0 / 1.5,
-    });
-
-    let mut world = HitableList::new();
-
-    world.add(Box::new(Sphere {
-        center: Vector3::new(0.0, -100.0, 0.0),
-        radius: 100.0,
-        material: ground_material.clone(),
-    }));
-    for mesh in monkey_mesh {
-        println!("Adding mesh");
-        world.add(Box::new(mesh));
-    }
+    let world = monkey_scene();
 
     println!("Start writing image");
     let start = std::time::Instant::now();
